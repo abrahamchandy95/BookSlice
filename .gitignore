@@ -1,3 +1,4 @@
+.cache/
 /build/
 /build-*/
 CMakeFiles/
@@ -16,6 +17,7 @@ rules.ninja
 build.ninja
 
 CMakeTools/
+.clangd
 
 *.swp
 *~
@@ -97,3 +99,5 @@ env/
 *.patch
 *.bak
 
+tests/
+chapters/
