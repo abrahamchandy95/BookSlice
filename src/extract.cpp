@@ -8,7 +8,7 @@
 
 #include "extract.hpp"
 #include "utils.hpp"
-// ─── OutlineParser implementation ────────────────────────────────────────────
+
 static void collect(fz_context *ctx, fz_outline *node,
                     std::vector<Outline> &out) {
   for (fz_outline *n = node; n; n = n->next) {
@@ -22,6 +22,20 @@ static void collect(fz_context *ctx, fz_outline *node,
   }
 }
 
+static void collect_with_depth(fz_context *ctx, fz_outline *node,
+                               std::vector<Outline> &out, int depth) {
+  for (fz_outline *n = node; n; n = n->next) {
+    if (n->title) {
+      int page = n->page.page;
+      if (page >= 0 && depth == 0) { // ONLY top-level entries
+        out.push_back({trim(n->title), page});
+      }
+    }
+    if (n->down)
+      collect_with_depth(ctx, n->down, out, depth + 1);
+  }
+}
+
 std::vector<Outline> OutlineParser::parse(fz_context *ctx, fz_document *doc) {
   std::vector<Outline> entries;
   fz_outline *outline{};
@@ -30,7 +44,7 @@ std::vector<Outline> OutlineParser::parse(fz_context *ctx, fz_document *doc) {
     std::cerr << "Failed to load outline: " << fz_caught_message(ctx) << '\n';
     return entries;
   }
-  collect(ctx, outline, entries);
+  collect_with_depth(ctx, outline, entries, 0);
   if (outline)
     fz_drop_outline(ctx, outline);
   return entries;
@@ -71,7 +85,10 @@ std::string extractChapterText(fz_context *ctx, fz_document *doc,
   for (int p = ch.pageStart - 1; p <= ch.pageEnd - 1; ++p) {
     fz_page *page = fz_load_page(ctx, doc, p);
     fz_buffer *buf = fz_new_buffer_from_page(ctx, page, nullptr);
-    txt.append({reinterpret_cast<char *>(buf->data), buf->len}).push_back('\n');
+
+    txt.append(reinterpret_cast<char *>(buf->data), buf->len);
+    txt.push_back('\n');
+
     fz_drop_buffer(ctx, buf);
     fz_drop_page(ctx, page);
   }

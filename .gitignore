@@ -101,3 +101,9 @@ env/
 
 tests/
 chapters/
+chapter_segments/
+toc_sections/
+
+test.py
+test.ipynb
+.ipynb_checkpoints/
