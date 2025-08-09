@@ -14,11 +14,12 @@ pkg_check_modules(MUPDF REQUIRED mupdf)
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
 add_executable(bookslice ${SRC_FILES})
 
-target_include_directories(bookslice PRIVATE
-    include
-    ${BSONCXX_INCLUDE_DIRS}
-    ${MONGOCXX_INCLUDE_DIRS}
-    ${MUPDF_INCLUDE_DIRS}  
+target_include_directories(bookslice
+  PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  SYSTEM PRIVATE
+          ${BSONCXX_INCLUDE_DIRS}
+          ${MONGOCXX_INCLUDE_DIRS}
+          ${MUPDF_INCLUDE_DIRS}
 )
 target_compile_options(bookslice PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(bookslice PRIVATE

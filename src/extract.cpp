@@ -4,9 +4,12 @@
 #include <iomanip>
 #include <iostream>
 #include <mupdf/fitz.h>
+#include <mupdf/fitz/context.h>
 #include <mupdf/fitz/structured-text.h>
+#include <ostream>
 
 #include "extract.hpp"
+#include "pdf_handles.hpp"
 #include "utils.hpp"
 
 static void collect(fz_context *ctx, fz_outline *node,
@@ -27,7 +30,7 @@ static void collect_with_depth(fz_context *ctx, fz_outline *node,
   for (fz_outline *n = node; n; n = n->next) {
     if (n->title) {
       int page = n->page.page;
-      if (page >= 0 && depth == 0) { // ONLY top-level entries
+      if (page >= 0 && depth == 0) {
         out.push_back({trim(n->title), page});
       }
     }
@@ -82,15 +85,20 @@ std::vector<ChapterInfo> compute(const std::vector<Outline> &outline,
 std::string extractChapterText(fz_context *ctx, fz_document *doc,
                                const ChapterInfo &ch) {
   std::string txt;
+  txt.reserve((ch.pageEnd - ch.pageStart + 1) * 1024);
   for (int p = ch.pageStart - 1; p <= ch.pageEnd - 1; ++p) {
-    fz_page *page = fz_load_page(ctx, doc, p);
-    fz_buffer *buf = fz_new_buffer_from_page(ctx, page, nullptr);
-
-    txt.append(reinterpret_cast<char *>(buf->data), buf->len);
+    auto page = make_page(ctx, doc, p);
+    if (!page) {
+      std::cerr << "Skipping page " << (p + 1) << " (failed to load)\n";
+      continue;
+    }
+    auto buf = make_buffer(ctx, page.get());
+    if (!buf) {
+      std::cerr << "Skipping page " << (p + 1) << " (failed to render)\n";
+      continue;
+    }
+    txt.append(buffer_data(buf), buffer_size(buf));
     txt.push_back('\n');
-
-    fz_drop_buffer(ctx, buf);
-    fz_drop_page(ctx, page);
   }
   return txt;
 }
