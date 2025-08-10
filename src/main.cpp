@@ -9,8 +9,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "extract.hpp"
 #include "pdf/session.hpp"
+#include "pipeline/extract_chapters.hpp"
 #include "utils.hpp"
 
 // ───────────────────────────  CONSTANTS  ──────────────────────────
@@ -205,21 +205,6 @@ findMatchingIndices(const std::vector<std::string> &tocLines,
   std::sort(matches.begin(), matches.end(),
             [](auto a, auto b) { return a.second < b.second; });
   return matches;
-}
-
-void print_outline_and_dump(PdfSession &session, PdfFile &pdf, int &totalPages,
-                            std::vector<ChapterInfo> &chapters) {
-  totalPages = pdf.pageCount();
-  auto outline = OutlineParser::parse(session.ctx(), pdf.doc());
-
-  if (outline.empty()) {
-    std::cout << "No Table of Contents found in this pdf" << std::endl;
-    return;
-  }
-  printOutline(outline, totalPages);
-  chapters = ChapterUtils::compute(outline,
-                                   totalPages); // or your ChapterUtils::compute
-  dumpChaptersToDir(session.ctx(), pdf.doc(), chapters);
 }
 
 std::vector<ChapterMatch> collect_chapter_matches() {
@@ -453,19 +438,7 @@ int main() {
     std::cerr << "Invalid MuPDF session." << std::endl;
     return 1;
   }
-  /*
-    MuPdfEnvironment env;
-  if (!env.isValid()) {
-    std::cerr << "Invalid MuPDF environment." << std::endl;
-    return 1;
-  }
 
-  PdfFile pdf(env.get(), path);
-  if (!pdf.isValid()) {
-    std::cerr << "Invalid PDF file" << std::endl;
-    return 1;
-  }
-*/
   PdfFile pdf(session.ctx(), path);
   if (!pdf.isValid()) {
     std::cerr << "Invalid PDF file" << std::endl;
@@ -474,8 +447,10 @@ int main() {
 
   int totalPages = pdf.pageCount();
   std::vector<ChapterInfo> chapters;
-  print_outline_and_dump(session, pdf, totalPages, chapters);
-
+  if (!extractChapters(session, pdf, totalPages, chapters)) {
+    std::cerr << "No TOC; skipping chapter extraction.\n";
+    return 2; // non-zero exit for shell scripts
+  }
   auto files = collect_chapter_matches();
   if (files.size() < 2) {
     std::cerr << "need ≥2 chapter files\n";

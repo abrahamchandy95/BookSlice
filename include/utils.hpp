@@ -1,10 +1,10 @@
 #pragma once
-#include "extract.hpp"
 #include <filesystem>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
-struct Outline;
+#include "types.hpp"
+
 std::string toLower(const std::string &s);
 bool isSpace(char c);
 std::string trim(const std::string &s);
