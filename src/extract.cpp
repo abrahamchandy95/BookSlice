@@ -9,7 +9,7 @@
 #include <ostream>
 
 #include "extract.hpp"
-#include "pdf_handles.hpp"
+#include "pdf/page_text.hpp"
 #include "utils.hpp"
 
 static void collect(fz_context *ctx, fz_outline *node,
@@ -84,25 +84,32 @@ std::vector<ChapterInfo> compute(const std::vector<Outline> &outline,
 
 std::string extractChapterText(fz_context *ctx, fz_document *doc,
                                const ChapterInfo &ch) {
-  std::string txt;
-  txt.reserve((ch.pageEnd - ch.pageStart + 1) * 1024);
+  std::string out;
+  const int count = ch.pageEnd - ch.pageStart + 1;
+  if (count <= 0)
+    return out;
+
+  out.reserve(count * 1024);
+
   for (int p = ch.pageStart - 1; p <= ch.pageEnd - 1; ++p) {
-    auto page = make_page(ctx, doc, p);
+    auto page = makePage(ctx, doc, p);
     if (!page) {
       std::cerr << "Skipping page " << (p + 1) << " (failed to load)\n";
       continue;
     }
-    auto buf = make_buffer(ctx, page.get());
+    auto buf = makeBuffer(ctx, page.get());
     if (!buf) {
       std::cerr << "Skipping page " << (p + 1) << " (failed to render)\n";
       continue;
     }
-    txt.append(buffer_data(buf), buffer_size(buf));
-    txt.push_back('\n');
+    auto view = bufferView(buf);
+    // C++20+: string::append(string_view) is fine; using data/size is explicit
+    // & portable.
+    out.append(view.data(), view.size());
+    out.push_back('\n');
   }
-  return txt;
+  return out;
 }
-
 void dumpChaptersToDir(fz_context *ctx, fz_document *doc,
                        const std::vector<ChapterInfo> &chapters,
                        const std::string &dir) {

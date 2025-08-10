@@ -9,8 +9,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "core.hpp"
 #include "extract.hpp"
+#include "pdf/session.hpp"
 #include "utils.hpp"
 
 // ───────────────────────────  CONSTANTS  ──────────────────────────
@@ -207,19 +207,19 @@ findMatchingIndices(const std::vector<std::string> &tocLines,
   return matches;
 }
 
-void print_outline_and_dump(MuPdfEnvironment &env, PdfFile &pdf,
-                            int &totalPages,
+void print_outline_and_dump(PdfSession &session, PdfFile &pdf, int &totalPages,
                             std::vector<ChapterInfo> &chapters) {
   totalPages = pdf.pageCount();
-  auto outline = OutlineParser::parse(env.get(), pdf.get());
+  auto outline = OutlineParser::parse(session.ctx(), pdf.doc());
 
   if (outline.empty()) {
     std::cout << "No Table of Contents found in this pdf" << std::endl;
     return;
   }
   printOutline(outline, totalPages);
-  chapters = ChapterUtils::compute(outline, totalPages);
-  dumpChaptersToDir(env.get(), pdf.get(), chapters);
+  chapters = ChapterUtils::compute(outline,
+                                   totalPages); // or your ChapterUtils::compute
+  dumpChaptersToDir(session.ctx(), pdf.doc(), chapters);
 }
 
 std::vector<ChapterMatch> collect_chapter_matches() {
@@ -448,7 +448,13 @@ int main() {
   const std::string path =
       "/home/workstation-tp/Downloads/Head-First-Design-Patterns.pdf";
 
-  MuPdfEnvironment env;
+  PdfSession session;
+  if (!session.isValid()) {
+    std::cerr << "Invalid MuPDF session." << std::endl;
+    return 1;
+  }
+  /*
+    MuPdfEnvironment env;
   if (!env.isValid()) {
     std::cerr << "Invalid MuPDF environment." << std::endl;
     return 1;
@@ -459,10 +465,16 @@ int main() {
     std::cerr << "Invalid PDF file" << std::endl;
     return 1;
   }
+*/
+  PdfFile pdf(session.ctx(), path);
+  if (!pdf.isValid()) {
+    std::cerr << "Invalid PDF file" << std::endl;
+    return 1;
+  }
 
-  int totalPages = 0;
+  int totalPages = pdf.pageCount();
   std::vector<ChapterInfo> chapters;
-  print_outline_and_dump(env, pdf, totalPages, chapters);
+  print_outline_and_dump(session, pdf, totalPages, chapters);
 
   auto files = collect_chapter_matches();
   if (files.size() < 2) {
