@@ -38,7 +38,6 @@ PdfFile::PdfFile(fz_context *ctx, std::string_view path) noexcept : ctx_(ctx) {
   if (!ctx_)
     return;
 
-  // Ensure deleter knows ctx even if open fails
   doc_.deleter().ctx = ctx_;
 
   fz_document *raw = nullptr;
