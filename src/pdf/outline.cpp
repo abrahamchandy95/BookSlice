@@ -10,7 +10,7 @@ static void collectAll(fz_context *ctx, fz_outline *node,
     if (n->title) {
       int page = n->page.page;
       if (page >= 0)
-        out.push_back({trim(n->title), page});
+        out.push_back({Text::trim(n->title), page});
     }
     if (n->down)
       collectAll(ctx, n->down, out);
@@ -23,7 +23,7 @@ static void collectTopOnly(fz_context *ctx, fz_outline *node,
     if (n->title) {
       int page = n->page.page;
       if (page >= 0 && depth == 0)
-        out.push_back({trim(n->title), page});
+        out.push_back({Text::trim(n->title), page});
     }
     if (n->down)
       collectTopOnly(ctx, n->down, out, depth + 1);

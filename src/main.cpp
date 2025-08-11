@@ -2,7 +2,6 @@
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -11,6 +10,7 @@
 
 #include "pdf/session.hpp"
 #include "pipeline/extract_chapters.hpp"
+#include "types.hpp"
 #include "utils.hpp"
 
 // ───────────────────────────  CONSTANTS  ──────────────────────────
@@ -38,49 +38,6 @@ struct SectionJSON {
   int start_line;
   std::string content;
 };
-
-static bool looks_like_page_no(const std::string &s) {
-  static const std::regex digits(R"(^\s*[0-9ivxlcdm]+\s*$)", std::regex::icase);
-  return std::regex_match(s, digits);
-}
-
-static void replaceAll(std::string &s, const std::string &from,
-                       const std::string &to) {
-  if (from.empty())
-    return;
-  size_t pos = 0;
-  while ((pos = s.find(from, pos)) != std::string::npos) {
-    s.replace(pos, from.size(), to);
-    pos += to.size();
-  }
-}
-
-static std::string strip_leading_chapter_tag(const std::string &s) {
-  static const std::regex re(
-      R"(^(chapter|ch)\s+([0-9]+|[ivxlcdm]+)\s*[:.\-]?\s*)", std::regex::icase);
-  return std::regex_replace(s, re, "");
-}
-
-static bool looks_like_toc_name(const std::string &filename) {
-  std::string s = normalize_str(filename);
-  static const std::array<const char *, 4> keys = {
-      "table_of_contents", "tableofcontents", "contents", "toc"};
-  for (auto k : keys) {
-    if (s.find(normalize_str(k)) != std::string::npos)
-      return true;
-  }
-  return false;
-}
-
-static std::vector<std::string>
-normalize_lines(const std::vector<std::string> &lines) {
-  std::vector<std::string> out;
-  out.reserve(lines.size());
-  for (auto &s : lines) {
-    out.push_back(normalize_str(s));
-  }
-  return out;
-}
 
 static std::vector<int>
 locate_keys_in_toc_monotonic(const std::vector<std::string> &tocNorm,
@@ -118,21 +75,11 @@ locate_keys_in_toc_monotonic(const std::vector<std::string> &tocNorm,
   return pos;
 }
 
-static std::string extractChapterTitle(const std::string &path) {
-
-  std::string name = std::filesystem::path(path).stem().string();
-  name = std::regex_replace(name, std::regex(R"(^\d+_)"), "");
-  replaceAll(name, "__", "_");
-  std::replace(name.begin(), name.end(), '_', ' ');
-  name = toLower(name);
-  name = collapseWhitespace(name);
-  return strip_leading_chapter_tag(name);
-}
-
 static bool isNoisy(const std::string &h,
                     const std::string &chapter_title_norm) {
-  std::string low = toLower(h);
-  if (collapseWhitespace(low).find(chapter_title_norm) != std::string::npos)
+  std::string low = Text::toLower(h);
+  if (Text::collapseWhitespace(low).find(chapter_title_norm) !=
+      std::string::npos)
     return true;
 
   for (const auto &k : BANNED_KEYWORDS)
@@ -163,7 +110,7 @@ buildTocLookup() {
   for (const auto &entry : fs::directory_iterator(TOC_DIR)) {
     if (!entry.is_regular_file())
       continue;
-    auto title = extractChapterTitle(entry.path().string());
+    auto title = Title::extractChapterTitle(entry.path().string());
     if (title.find("table of contents") != std::string::npos)
       continue;
     lookup[title].push_back(entry.path());
@@ -179,8 +126,8 @@ static bool isSubstringWithArticleStripped(std::string s1,
   if (s1.rfind("The ", 0) == 0)
     s1.erase(0, 4);
 
-  s1 = collapseWhitespace(s1);
-  std::string b = collapseWhitespace(s2);
+  s1 = Text::collapseWhitespace(s1);
+  std::string b = Text::collapseWhitespace(s2);
 
   return b.find(s1) != std::string::npos;
 }
@@ -214,11 +161,11 @@ std::vector<ChapterMatch> collect_chapter_matches() {
     if (!f.is_regular_file() || f.path().extension() != ".txt")
       continue;
     const auto fname = f.path().filename().string();
-    if (looks_like_toc_name(fname))
+    if (Title::looksLikeTocName(fname))
       continue;
-    auto t_norm = extractChapterTitle(fname);
+    auto t_norm = Title::extractChapterTitle(fname);
 
-    auto key = normalize_str(t_norm);
+    auto key = Text::normalizeStr(t_norm);
     v.push_back({f.path().string(), key});
   }
   std::sort(v.begin(), v.end(),
@@ -231,7 +178,7 @@ std::vector<ChapterMatch> collect_chapter_matches() {
 std::filesystem::path find_toc_path() {
   for (auto &f : std::filesystem::directory_iterator("chapters")) {
     auto name = f.path().filename().string();
-    if (looks_like_toc_name(name)) {
+    if (Title::looksLikeTocName(name)) {
       return f.path();
     }
   }
@@ -244,11 +191,11 @@ std::vector<std::string> extract_between(const std::vector<std::string> &toc,
   std::vector<std::string> buf;
   std::size_t i = 0, j = 0;
   while (j < toc.size()) {
-    if (normalize_str(toc[j]).find(startKey) != std::string::npos) {
+    if (Text::normalizeStr(toc[j]).find(startKey) != std::string::npos) {
       i = j;
       ++j;
       while (j < toc.size()) {
-        std::string cur = normalize_str(toc[j]);
+        std::string cur = Text::normalizeStr(toc[j]);
         if (cur.find(endKey) != std::string::npos) {
           buf.insert(buf.end(), toc.begin() + i, toc.begin() + j);
           ++j;
@@ -275,9 +222,9 @@ void extract_all_sections(const std::filesystem::path &tocPath,
 
   std::vector<std::string> tocLines;
   for (std::string ln; std::getline(tocIn, ln);)
-    tocLines.push_back(trim(ln));
+    tocLines.push_back(Text::trim(ln));
 
-  auto tocNorm = normalize_lines(tocLines);
+  auto tocNorm = Text::normalizeLines(tocLines);
 
   std::filesystem::create_directories(outDir);
 
@@ -303,7 +250,7 @@ void extract_all_sections(const std::filesystem::path &tocPath,
     int written = 0;
     for (int i = start; i < end; ++i) {
       const auto &ln = tocLines[i];
-      if (!ln.empty() && !looks_like_page_no(ln)) {
+      if (!ln.empty() && !Text::looksLikePageNo(ln)) {
         os << ln << '\n';
         ++written;
       }
@@ -371,7 +318,7 @@ bool processOneChapter(
     const std::filesystem::path &chapPath,
     const std::unordered_map<std::string, std::vector<std::filesystem::path>>
         &tocLookup) {
-  std::string chapTitle = extractChapterTitle(chapPath.string());
+  std::string chapTitle = Title::extractChapterTitle(chapPath.string());
   auto it = tocLookup.find(chapTitle);
   if (it == tocLookup.end()) {
     std::cerr << "⚠️  no TOC found for chapter '" << chapTitle << "'\n";
@@ -379,8 +326,8 @@ bool processOneChapter(
   }
 
   std::filesystem::path tocPath = it->second.front();
-  auto tocLines = readLines(tocPath);
-  auto allLines = readLines(chapPath);
+  auto tocLines = FileIO::readLines(tocPath);
+  auto allLines = FileIO::readLines(chapPath);
 
   auto matches = findMatchingIndices(tocLines, allLines, chapTitle);
   auto segments =
@@ -400,7 +347,7 @@ bool processOneChapter(
       if (i != end)
         content.push_back('\n');
     }
-    content = trim(content);
+    content = Text::trim(content);
 
     items.push_back({{"title", title},
                      {"startline", start},
@@ -411,7 +358,7 @@ bool processOneChapter(
   std::filesystem::create_directories(std::string(OUT_DIR));
   std::filesystem::path outPath = std::filesystem::path(std::string(OUT_DIR)) /
                                   (chapPath.stem().string() + "_segments.json");
-  writeJson(outPath, items);
+  FileIO::writeJson(outPath, items);
   std::cout << "✓ " << items.size() << " segments → " << outPath << '\n';
   return true;
 }

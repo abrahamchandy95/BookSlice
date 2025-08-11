@@ -76,7 +76,7 @@ ChapterWriter::writeAll(const ChapterReader &reader,
 
     std::ostringstream name;
     name << dir_ << '/' << std::setw(2) << std::setfill('0') << (i + 1) << '_'
-         << slugify(ch.title) << ".txt";
+         << Title::slugify(ch.title) << ".txt";
 
     std::ofstream os(name.str());
     if (!os) {

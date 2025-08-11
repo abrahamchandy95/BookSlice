@@ -17,12 +17,10 @@ bool extractChapters(const PdfSession &session, const PdfFile &pdf,
     return false;
   }
 
-  printOutline(outline, totalPages);
+  OutlineView::print(outline, totalPages);
   chapters = computeChapters(outline, totalPages);
-  // dumpChapters(session.ctx(), pdf.doc(), chapters);
-  // return !chapters.empty();
   ChapterReader reader(session.ctx(), pdf.doc());
-  ChapterWriter writer("chapters"); // or pass a dir from the caller
+  ChapterWriter writer("chapters");
   const std::size_t written = writer.writeAll(reader, chapters);
 
   return written > 0;
