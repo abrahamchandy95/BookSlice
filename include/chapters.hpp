@@ -1,4 +1,3 @@
-
 #pragma once
 #include <mupdf/fitz.h>
 #include <mupdf/fitz/context.h>

@@ -12,3 +12,8 @@ struct ChapterInfo {
   int pageEnd;
   int pageCount;
 };
+
+struct ChapterMatch {
+  std::string file;
+  std::string key;
+};

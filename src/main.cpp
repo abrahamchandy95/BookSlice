@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/chapter_index.hpp"
+#include "core/matcher.hpp"
 #include "pdf/session.hpp"
 #include "pipeline/extract_chapters.hpp"
 #include "types.hpp"
@@ -18,19 +20,10 @@ constexpr std::string_view CHAPTERS_DIR = "chapters";
 constexpr std::string_view TOC_DIR = "toc_sections";
 constexpr std::string_view OUT_DIR = "chapter_segments";
 constexpr int MIN_LINES_BETWEEN_CHAPTERS = 5;
-constexpr double UPPER_RATIO_CAP = 0.6;
-
-constexpr std::array<std::string_view, 4> BANNED_KEYWORDS{
-    "download", "wowebook", "copyright", "page"};
 
 struct Piece {
   std::string title;
   std::string body;
-};
-
-struct ChapterMatch {
-  std::string file;
-  std::string key;
 };
 
 struct SectionJSON {
@@ -39,75 +32,11 @@ struct SectionJSON {
   std::string content;
 };
 
-static std::vector<int>
-locate_keys_in_toc_monotonic(const std::vector<std::string> &tocNorm,
-                             const std::vector<ChapterMatch> &files,
-                             int start_from = 0) {
-  std::vector<int> pos(files.size(), -1);
-  int cursor = start_from;
-
-  for (size_t k = 0; k < files.size(); ++k) {
-    const std::string &key = files[k].key;
-    int found = -1;
-    for (int i = cursor; i < (int)tocNorm.size(); ++i) {
-      const auto &ln = tocNorm[i];
-      if (!ln.empty() && ln.find(key) != std::string::npos) {
-        found = i;
-        break;
-      }
-    }
-    // try matching without 'the'
-    if (found < 0 && key.rfind("the", 0) == 0) {
-      std::string noThe = key.substr(3);
-      for (int i = cursor; i < (int)tocNorm.size(); ++i) {
-        const auto &ln = tocNorm[i];
-        if (!ln.empty() && ln.find(noThe) != std::string::npos) {
-          found = i;
-          break;
-        }
-      }
-    }
-    pos[k] = found;
-    if (found >= 0) {
-      cursor = found + 1;
-    }
-  }
-  return pos;
-}
-
-static bool isNoisy(const std::string &h,
-                    const std::string &chapter_title_norm) {
-  std::string low = Text::toLower(h);
-  if (Text::collapseWhitespace(low).find(chapter_title_norm) !=
-      std::string::npos)
-    return true;
-
-  for (const auto &k : BANNED_KEYWORDS)
-    if (low.find(k) != std::string::npos)
-      return true;
-
-  if (h.find("()") != std::string::npos || h.find("//") != std::string::npos)
-    return true;
-
-  int letters = 0, uppers = 0;
-  for (unsigned char c : h) {
-    if (std::isalpha(c)) {
-      ++letters;
-      if (std::isupper(c))
-        ++uppers;
-    }
-  }
-  if (letters == 0)
-    return true;
-  return static_cast<double>(uppers) / letters >= UPPER_RATIO_CAP;
-}
-
 std::unordered_map<std::string, std::vector<std::filesystem::path>>
 buildTocLookup() {
-  namespace fs = std::filesystem;
-  std::unordered_map<std::string, std::vector<fs::path>> lookup;
+  std::unordered_map<std::string, std::vector<std::filesystem::path>> lookup;
 
-  for (const auto &entry : fs::directory_iterator(TOC_DIR)) {
+  for (const auto &entry : std::filesystem::directory_iterator(TOC_DIR)) {
     if (!entry.is_regular_file())
       continue;
     auto title = Title::extractChapterTitle(entry.path().string());
@@ -116,42 +45,6 @@ buildTocLookup() {
     lookup[title].push_back(entry.path());
   }
   return lookup;
-}
-
-static bool isSubstringWithArticleStripped(std::string s1,
-                                           const std::string &s2) {
-  if (s1.size() < 5)
-    return false;
-
-  if (s1.rfind("The ", 0) == 0)
-    s1.erase(0, 4);
-
-  s1 = Text::collapseWhitespace(s1);
-  std::string b = Text::collapseWhitespace(s2);
-
-  return b.find(s1) != std::string::npos;
-}
-
-static std::vector<std::pair<int, int>>
-findMatchingIndices(const std::vector<std::string> &tocLines,
-                    const std::vector<std::string> &allLines,
-                    const std::string &chapter_title_norm) {
-  std::vector<std::pair<int, int>> matches;
-  for (int tIdx = 0; tIdx < static_cast<int>(tocLines.size()); ++tIdx) {
-    if (isNoisy(tocLines[tIdx], chapter_title_norm))
-      continue;
-
-    for (int aIdx = 0; aIdx < static_cast<int>(allLines.size()); ++aIdx) {
-      if (isSubstringWithArticleStripped(tocLines[tIdx], allLines[aIdx])) {
-        matches.emplace_back(tIdx, aIdx);
-        break;
-      }
-    }
-  }
-
-  std::sort(matches.begin(), matches.end(),
-            [](auto a, auto b) { return a.second < b.second; });
-  return matches;
 }
 
 std::vector<ChapterMatch> collect_chapter_matches() {
@@ -173,16 +66,6 @@ std::vector<ChapterMatch> collect_chapter_matches() {
               return a.file < b.file;
             });
   return v;
-}
-
-std::filesystem::path find_toc_path() {
-  for (auto &f : std::filesystem::directory_iterator("chapters")) {
-    auto name = f.path().filename().string();
-    if (Title::looksLikeTocName(name)) {
-      return f.path();
-    }
-  }
-  return {};
 }
 
 std::vector<std::string> extract_between(const std::vector<std::string> &toc,
@@ -227,8 +110,8 @@ void extract_all_sections(const std::filesystem::path &tocPath,
   auto tocNorm = Text::normalizeLines(tocLines);
 
   std::filesystem::create_directories(outDir);
-
-  auto positions = locate_keys_in_toc_monotonic(tocNorm, files);
+  ChapterIndex indexer;
+  auto positions = indexer.indexChapters(tocNorm, files);
 
   // Extract slices
   for (size_t idx = 0; idx + 1 < files.size(); ++idx) {
@@ -329,7 +212,8 @@ bool processOneChapter(
   auto tocLines = FileIO::readLines(tocPath);
   auto allLines = FileIO::readLines(chapPath);
 
-  auto matches = findMatchingIndices(tocLines, allLines, chapTitle);
+  Matcher matcher;
+  auto matches = matcher.matchIndices(tocLines, allLines, chapTitle);
   auto segments =
       segmentChapterWithToc(matches, static_cast<int>(allLines.size()));
 
@@ -363,19 +247,6 @@ bool processOneChapter(
   return true;
 }
 
-static std::vector<std::filesystem::path> listChapterFilesSorted() {
-  std::vector<std::filesystem::path> v;
-  if (!std::filesystem::exists(std::string(CHAPTERS_DIR)))
-    return v;
-  for (const auto &e :
-       std::filesystem::directory_iterator(std::string(CHAPTERS_DIR))) {
-    if (e.is_regular_file() && e.path().extension() == ".txt")
-      v.push_back(e.path());
-  }
-  std::sort(v.begin(), v.end());
-  return v;
-}
-
 int main() {
   const std::string path =
       "/home/workstation-tp/Downloads/Head-First-Design-Patterns.pdf";
@@ -404,7 +275,7 @@ int main() {
     return 1;
   }
 
-  auto tocPath = find_toc_path();
+  auto tocPath = Title::findToc(std::string(CHAPTERS_DIR));
   if (tocPath.empty()) {
     std::cerr << "TOC text not found\n";
     return 1;
@@ -417,7 +288,8 @@ int main() {
   auto tocLookup = buildTocLookup();
 
   size_t written = 0;
-  for (const auto &chapPath : listChapterFilesSorted()) {
+  for (const auto &chapPath :
+       FileIO::listChapters(std::string(CHAPTERS_DIR), ".txt")) {
     if (processOneChapter(chapPath, tocLookup))
       ++written;
   }
