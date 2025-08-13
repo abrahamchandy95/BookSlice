@@ -9,8 +9,10 @@
 #include "core/matcher.hpp"
 #include "core/segmenter.hpp"
 #include "pdf/session.hpp"
+#include "pipeline/catalog.hpp"
 #include "pipeline/extract_chapters.hpp"
 #include "pipeline/slice_toc.hpp"
+#include "pipeline/toc_lookup.hpp"
 #include "types.hpp"
 #include "utils.hpp"
 
@@ -30,42 +32,6 @@ struct SectionJSON {
   int start_line;
   std::string content;
 };
-
-std::unordered_map<std::string, std::vector<std::filesystem::path>>
-buildTocLookup() {
-  std::unordered_map<std::string, std::vector<std::filesystem::path>> lookup;
-
-  for (const auto &entry : std::filesystem::directory_iterator(TOC_DIR)) {
-    if (!entry.is_regular_file())
-      continue;
-    auto title = Title::extractChapterTitle(entry.path().string());
-    if (title.find("table of contents") != std::string::npos)
-      continue;
-    lookup[title].push_back(entry.path());
-  }
-  return lookup;
-}
-
-std::vector<ChapterMatch> collect_chapter_matches() {
-  std::vector<ChapterMatch> v;
-  for (auto &f :
-       std::filesystem::directory_iterator(std::string(CHAPTERS_DIR))) {
-    if (!f.is_regular_file() || f.path().extension() != ".txt")
-      continue;
-    const auto fname = f.path().filename().string();
-    if (Title::looksLikeTocName(fname))
-      continue;
-    auto t_norm = Title::extractChapterTitle(fname);
-
-    auto key = Text::normalizeStr(t_norm);
-    v.push_back({f.path().string(), key});
-  }
-  std::sort(v.begin(), v.end(),
-            [](const ChapterMatch &a, const ChapterMatch &b) {
-              return a.file < b.file;
-            });
-  return v;
-}
 
 std::vector<std::string> extract_between(const std::vector<std::string> &toc,
                                          const std::string &startKey,
@@ -165,11 +131,7 @@ int main() {
     std::cerr << "No TOC; skipping chapter extraction.\n";
     return 2;
   }
-  auto files = collect_chapter_matches();
-  if (files.size() < 2) {
-    std::cerr << "need ≥2 chapter files\n";
-    return 1;
-  }
+  auto files = Catalog(std::string(CHAPTERS_DIR)).collect();
 
   auto tocPath = Title::findToc(std::string(CHAPTERS_DIR));
   if (tocPath.empty()) {
@@ -181,8 +143,7 @@ int main() {
   sliceToc(tocPath, files, MIN_LINES_BETWEEN_CHAPTERS, std::string(TOC_DIR));
   std::filesystem::create_directories(OUT_DIR);
 
-  auto tocLookup = buildTocLookup();
-
+  auto tocLookup = TocLookup(std::string(TOC_DIR)).build();
   size_t written = 0;
   for (const auto &chapPath :
        FileIO::listChapters(std::string(CHAPTERS_DIR), ".txt")) {

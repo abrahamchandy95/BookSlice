@@ -139,14 +139,14 @@ std::string Title::slugify(const std::string &s) {
 std::filesystem::path Title::findToc(const std::filesystem::path &dir) {
   for (const auto &f : std::filesystem::directory_iterator(dir)) {
     auto name = f.path().filename().string();
-    if (Title::looksLikeTocName(name))
+    if (Title::isTocLabel(name))
       return f.path();
   }
   return {};
 }
 
-bool Title::isWordBannedGiven(std::string_view s,
-                              std::span<const std::string_view> words) {
+bool Title::containsAnyOf(std::string_view s,
+                          std::span<const std::string_view> words) {
   for (auto w : words) {
     if (!w.empty() && s.find(w) != std::string::npos)
       return true;
@@ -157,14 +157,18 @@ bool Title::isWordBannedGiven(std::string_view s,
 bool Title::hasBannedWord(std::string_view s) {
   static const std::array<std::string_view, 4> kBanned{"download", "wowebook",
                                                        "copyright", "page"};
-  return isWordBannedGiven(s, kBanned);
+  return containsAnyOf(s, kBanned);
+}
+
+bool Title::isTocLabel(std::string_view text) {
+  const std::string norm = Text::normalizeStr(std::string(text));
+  static const std::array<std::string_view, 3> keys = {"tableofcontents",
+                                                       "contents", "toc"};
+  return Title::containsAnyOf(norm, keys);
 }
 
 bool Title::looksLikeTocName(const std::string &filename) {
-  const std::string norm = Text::normalizeStr(filename);
-  static const std::array<std::string_view, 3> keys = {"tableofcontents",
-                                                       "contents", "toc"};
-  return isWordBannedGiven(norm, keys);
+  return Title::isTocLabel(filename);
 }
 
 std::string Title::extractChapterTitle(const std::string &path) {

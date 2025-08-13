@@ -29,11 +29,12 @@ struct Title {
   static std::string stripLeadingThe(std::string s);
   static std::string slugify(const std::string &s);
   static std::filesystem::path findToc(const std::filesystem::path &dir);
+  static bool isTocLabel(const std::string_view text);
   static bool looksLikeTocName(const std::string &filename);
   static bool hasChapterName(std::string_view s,
                              const std::string &chapterTitle);
-  static bool isWordBannedGiven(std::string_view s,
-                                std::span<const std::string_view> words);
+  static bool containsAnyOf(std::string_view s,
+                            std::span<const std::string_view> words);
   static bool hasBannedWord(std::string_view lower);
   static bool hasWeirdChars(std::string_view s);
   static bool isNoisy(const std::string &s, const std::string &chapterTitle);
