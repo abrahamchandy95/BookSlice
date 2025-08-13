@@ -86,8 +86,8 @@ bool SectionWriter::runOne(
   const auto j = rows_to_json(rows);
 
   std::filesystem::create_directories(cfg_.outDir);
-  const auto outPath = std::filesystem::path(cfg_.outDir) /
-                       (chapPath.stem().string() + "_segments.json");
+  const auto outPath =
+      std::filesystem::path(cfg_.outDir) / (chapPath.stem().string() + ".json");
   FileIO::writeJson(outPath, j);
 
   std::cout << "✓ " << j.size() << " segments → " << outPath << '\n';

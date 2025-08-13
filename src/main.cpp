@@ -17,6 +17,12 @@ static const std::filesystem::path kTocDir{"toc_sections"};
 static const std::filesystem::path kOutDir{"chapter_segments"};
 static constexpr int kMinLinesBetweenChapters = 5;
 
+struct MongoConfig {
+  std::string uri{"mongodb://127.0.0.1:27017"};
+  std::string db{"bookslice"};
+  std::string coll{"sections"};
+};
+
 static bool extract_chapter_texts(const PdfSession &session, const PdfFile &pdf,
                                   int &totalPages,
                                   std::vector<ChapterInfo> &chapters) {
