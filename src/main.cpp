@@ -33,32 +33,6 @@ struct SectionJSON {
   std::string content;
 };
 
-std::vector<std::string> extract_between(const std::vector<std::string> &toc,
-                                         const std::string &startKey,
-                                         const std::string &endKey) {
-  std::vector<std::string> buf;
-  std::size_t i = 0, j = 0;
-  while (j < toc.size()) {
-    if (Text::normalizeStr(toc[j]).find(startKey) != std::string::npos) {
-      i = j;
-      ++j;
-      while (j < toc.size()) {
-        std::string cur = Text::normalizeStr(toc[j]);
-        if (cur.find(endKey) != std::string::npos) {
-          buf.insert(buf.end(), toc.begin() + i, toc.begin() + j);
-          ++j;
-          break;
-        } else if (cur.find(startKey) != std::string::npos) {
-          i = j;
-        }
-        ++j;
-      }
-    } else
-      ++j;
-  }
-  return buf;
-}
-
 bool processOneChapter(
     const std::filesystem::path &chapPath,
     const std::unordered_map<std::string, std::vector<std::filesystem::path>>
