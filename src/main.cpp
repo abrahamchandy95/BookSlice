@@ -1,17 +1,16 @@
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-#include "core/chapter_index.hpp"
 #include "core/matcher.hpp"
+#include "core/segmenter.hpp"
 #include "pdf/session.hpp"
 #include "pipeline/extract_chapters.hpp"
+#include "pipeline/slice_toc.hpp"
 #include "types.hpp"
 #include "utils.hpp"
 
@@ -94,109 +93,6 @@ std::vector<std::string> extract_between(const std::vector<std::string> &toc,
   return buf;
 }
 
-void extract_all_sections(const std::filesystem::path &tocPath,
-                          const std::vector<ChapterMatch> &files,
-                          const std::string &outDir = "toc_sections") {
-  std::ifstream tocIn(tocPath);
-  if (!tocIn) {
-    std::cerr << "Cannot open " << tocPath << '\n';
-    return;
-  }
-
-  std::vector<std::string> tocLines;
-  for (std::string ln; std::getline(tocIn, ln);)
-    tocLines.push_back(Text::trim(ln));
-
-  auto tocNorm = Text::normalizeLines(tocLines);
-
-  std::filesystem::create_directories(outDir);
-  ChapterIndex indexer;
-  auto positions = indexer.indexChapters(tocNorm, files);
-
-  // Extract slices
-  for (size_t idx = 0; idx + 1 < files.size(); ++idx) {
-    int start = positions[idx];
-    int end = positions[idx + 1];
-
-    if (start < 0 || end < 0 || end <= start) {
-      continue;
-    }
-
-    if ((end - start) < MIN_LINES_BETWEEN_CHAPTERS) {
-      continue;
-    }
-
-    std::string stem = std::filesystem::path(files[idx].file).stem().string();
-    std::filesystem::path out = std::filesystem::path(outDir) / (stem + ".txt");
-
-    std::ofstream os(out);
-    int written = 0;
-    for (int i = start; i < end; ++i) {
-      const auto &ln = tocLines[i];
-      if (!ln.empty() && !Text::looksLikePageNo(ln)) {
-        os << ln << '\n';
-        ++written;
-      }
-    }
-
-    std::cout << "◆ wrote " << written << " lines → " << out << "  (slice "
-              << start << " .. " << (end - 1) << ")\n";
-  }
-}
-
-using Segment = std::tuple<int, int, int>;
-
-static std::vector<Segment>
-segmentChapterWithToc(const std::vector<std::pair<int, int>> &matches,
-                      int total_lines, int min_gap = 20) {
-  // Python behavior: no matches ⇒ single intro slice
-  if (matches.empty())
-    return {std::make_tuple(0, total_lines - 1, -1)};
-
-  // (0) sort-by-line is assumed by caller; drop duplicates on the same line
-  std::unordered_set<int> seen_lines;
-  std::vector<std::pair<int, int>> ordered;
-  ordered.reserve(matches.size());
-  for (auto [toc, ln] : matches) {
-    if (seen_lines.insert(ln).second) {
-      ordered.emplace_back(toc, ln);
-    }
-  }
-
-  // (1) pick subsection starts using only the min-gap rule
-  std::vector<std::pair<int, int>> starts; // (toc_idx, line_idx)
-  starts.push_back(ordered.front());
-  int last_line = ordered.front().second;
-
-  for (size_t i = 1; i < ordered.size(); ++i) {
-    auto [toc, ln] = ordered[i];
-    if (ln - last_line >= min_gap) {
-      starts.emplace_back(toc, ln);
-      last_line = ln;
-    }
-  }
-
-  // (2) turn starts into (start, end, toc) segments
-  std::vector<Segment> segments;
-
-  int first_ln = starts.front().second;
-  if (first_ln > 0) {
-    // introduction slice
-    segments.emplace_back(0, first_ln - 1, -1);
-  }
-
-  for (size_t i = 0; i + 1 < starts.size(); ++i) {
-    const auto &cur = starts[i];
-    const auto &nxt = starts[i + 1];
-    segments.emplace_back(cur.second, nxt.second - 1, cur.first);
-  }
-
-  const auto &last = starts.back();
-  segments.emplace_back(last.second, total_lines - 1, last.first);
-
-  return segments;
-}
-
 bool processOneChapter(
     const std::filesystem::path &chapPath,
     const std::unordered_map<std::string, std::vector<std::filesystem::path>>
@@ -214,9 +110,9 @@ bool processOneChapter(
 
   Matcher matcher;
   auto matches = matcher.matchIndices(tocLines, allLines, chapTitle);
-  auto segments =
-      segmentChapterWithToc(matches, static_cast<int>(allLines.size()));
-
+  Segmenter segmenter;
+  auto segments = segmenter.buildSections(
+      matches, static_cast<int>(allLines.size()), MIN_LINES_BETWEEN_CHAPTERS);
   // Build JSON items
   nlohmann::json items = nlohmann::json::array();
   int sub_no = 1;
@@ -267,7 +163,7 @@ int main() {
   std::vector<ChapterInfo> chapters;
   if (!extractChapters(session, pdf, totalPages, chapters)) {
     std::cerr << "No TOC; skipping chapter extraction.\n";
-    return 2; // non-zero exit for shell scripts
+    return 2;
   }
   auto files = collect_chapter_matches();
   if (files.size() < 2) {
@@ -282,7 +178,7 @@ int main() {
   }
 
   std::cout << "Extracting TOC windows from " << tocPath << '\n';
-  extract_all_sections(tocPath, files);
+  sliceToc(tocPath, files, MIN_LINES_BETWEEN_CHAPTERS, std::string(TOC_DIR));
   std::filesystem::create_directories(OUT_DIR);
 
   auto tocLookup = buildTocLookup();

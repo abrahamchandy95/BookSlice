@@ -17,3 +17,9 @@ struct ChapterMatch {
   std::string file;
   std::string key;
 };
+
+struct Section {
+  int startLine;
+  int endLine;
+  int tocEntry;
+};

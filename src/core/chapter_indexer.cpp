@@ -1,4 +1,4 @@
-#include "core/chapter_index.hpp"
+#include "core/chapter_indexer.hpp"
 #include "utils.hpp"
 #include <cstddef>
 
