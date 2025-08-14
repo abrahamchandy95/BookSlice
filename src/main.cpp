@@ -2,6 +2,9 @@
 #include <iostream>
 #include <vector>
 
+#include "db/ingestor.hpp"
+#include "db/mongo_conf.hpp"
+#include "db/mongo_repo.hpp"
 #include "pdf/metadata.hpp"
 #include "pdf/session.hpp"
 #include "pipeline/catalog.hpp"
@@ -10,18 +13,11 @@
 #include "pipeline/slice_toc.hpp"
 #include "types.hpp"
 #include "utils.hpp"
-
 // ───────────────────────────  CONSTANTS  ──────────────────────────
 static const std::filesystem::path kChaptersDir{"chapters"};
 static const std::filesystem::path kTocDir{"toc_sections"};
 static const std::filesystem::path kOutDir{"chapter_segments"};
 static constexpr int kMinLinesBetweenChapters = 5;
-
-struct MongoConfig {
-  std::string uri{"mongodb://127.0.0.1:27017"};
-  std::string db{"bookslice"};
-  std::string coll{"sections"};
-};
 
 static bool extract_chapter_texts(const PdfSession &session, const PdfFile &pdf,
                                   int &totalPages,
@@ -116,10 +112,43 @@ static int run(const std::filesystem::path &pdfPath) {
   return 0;
 }
 
+static BookTitle fetch_book_title_for(const std::filesystem::path &pdfPath) {
+  PdfSession session;
+  if (!session.isValid()) {
+    std::string base = pdfPath.stem().string();
+    for (char &c : base)
+      if (c == '_' || c == '-' || c == '.')
+        c = ' ';
+    base = Text::collapseWhitespace(base);
+    base = Text::trim(base);
+    return BookTitle{base, /*fromMetadata=*/false, "filename"};
+  }
+  PdfFile pdf(session.ctx(), pdfPath.string());
+  if (!pdf.isValid()) {
+    std::string base = pdfPath.stem().string();
+    for (char &c : base)
+      if (c == '_' || c == '-' || c == '.')
+        c = ' ';
+    base = Text::collapseWhitespace(base);
+    base = Text::trim(base);
+    return BookTitle{base, /*fromMetadata=*/false, "filename"};
+  }
+  return getBookTitle(session.ctx(), pdf.doc(), pdfPath);
+}
+
 int main(int argc, char **argv) {
   const std::filesystem::path pdfPath =
       (argc > 1) ? std::filesystem::path{argv[1]}
                  : std::filesystem::path{"/home/workstation-tp/Downloads/"
                                          "Head-First-Design-Patterns.pdf"};
-  return run(pdfPath);
+  const int pipeline_rc = run(pdfPath);
+  if (pipeline_rc != 0)
+    return pipeline_rc;
+  const BookTitle bt = fetch_book_title_for(pdfPath);
+  MongoConfig cfg;
+  MongoRepository repo(cfg);
+  Ingestor ingestor(repo);
+
+  const int mongo_rc = ingestor.ingest_directory(kOutDir, pdfPath, bt);
+  return mongo_rc;
 }
