@@ -137,10 +137,15 @@ static BookTitle fetch_book_title_for(const std::filesystem::path &pdfPath) {
 }
 
 int main(int argc, char **argv) {
+  const char *home = std::getenv("HOME");
+  if (!home) {
+    std::cerr << "HOME not set!" << std::endl;
+    return 1;
+  }
   const std::filesystem::path pdfPath =
       (argc > 1) ? std::filesystem::path{argv[1]}
-                 : std::filesystem::path{"/home/workstation-tp/Downloads/"
-                                         "Head-First-Design-Patterns.pdf"};
+                 : std::filesystem::path(home) / "Downloads" /
+                       "Head-First-Design-Patterns";
   const int pipeline_rc = run(pdfPath);
   if (pipeline_rc != 0)
     return pipeline_rc;
