@@ -29,10 +29,11 @@ mongocxx::instance &MongoRepository::driver() {
   return inst;
 }
 
-MongoRepository::MongoRepository(const MongoConfig &cfg)
-    : cfg_(cfg), client_{mongocxx::uri{cfg_.uri}},
-      coll_{client_[cfg_.db][cfg_.coll]} {
-  (void)driver(); // make sure global driver is constructed
+MongoRepository::MongoRepository(const MongoConfig &cfg) : cfg_(cfg) {
+
+  (void)driver();
+  client_ = mongocxx::client{mongocxx::uri{cfg_.uri}};
+  coll_ = client_[cfg_.db][cfg_.coll];
   ensure_ready();
 }
 
