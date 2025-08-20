@@ -145,7 +145,7 @@ int main(int argc, char **argv) {
   const std::filesystem::path pdfPath =
       (argc > 1) ? std::filesystem::path{argv[1]}
                  : std::filesystem::path(home) / "Downloads" /
-                       "Head-First-Design-Patterns";
+                       "Head-First-Design-Patterns.pdf";
   const int pipeline_rc = run(pdfPath);
   if (pipeline_rc != 0)
     return pipeline_rc;
