@@ -9,6 +9,7 @@ CTestTestfile.cmake
 Testing/
 _install/
 _install-*/
+infra/
 
 .ninja_deps
 .ninja_log
@@ -18,6 +19,7 @@ build.ninja
 CMakeTools/
 .clangd
 
+*.ipynb
 *.swp
 *~
 *.bak
@@ -29,6 +31,7 @@ Thumbs.db
 
 .vscode/
 .code-workspace
+.python-version
 
 .idea/
 cmake-build-*/
