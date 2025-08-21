@@ -1,0 +1,18 @@
+[project]
+name = "knowledge-base"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pymongo==4.14",
+  "pandas==2.3.1",
+  "requests==2.32",
+  "pydantic>=2.7",
+  "python-dotenv>=1.0",
+  "pyarrow>=17.0"
+]
+[project.scripts]
+knowledge-base = "knowledge-base.cli:main"
+kb = "knowledge-base.cli:main"
+[build-system]
+required = ["setuptools>68", "wheel"]
+build-backend = "setuptools.build_meta"
