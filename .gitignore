@@ -10,6 +10,7 @@ Testing/
 _install/
 _install-*/
 infra/
+results/
 
 .ninja_deps
 .ninja_log
