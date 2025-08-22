@@ -1,6 +1,7 @@
 """Lightweight helpers shared accross modules"""
 
 import json
+import re
 from typing import Any, Dict, Iterable, List
 
 
@@ -41,3 +42,10 @@ def dedup(items: Iterable[str]) -> List[str]:
             seen.add(kl)
             out.append(k)
     return out
+
+
+def slugify(s: str) -> str:
+    """Very small slug for filenames."""
+    s = s.strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return re.sub(r"-{2,}", "-", s).strip("-") or "book"
