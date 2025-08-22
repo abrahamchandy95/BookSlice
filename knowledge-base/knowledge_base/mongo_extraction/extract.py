@@ -3,11 +3,12 @@ This module exposes a class that reads sections out of a book stored
 in MongoDB and yields lightweight payloads for downstream use.
 """
 
-from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from pymongo import ASCENDING, MongoClient
 from pymongo.collection import Collection
+
+from knowledge_base.data_utils import Section
 
 MIN_CHARS = 100
 DB_NAME = "bookslice"
@@ -20,18 +21,6 @@ _PROJECT_DOC_FIELDS = {
     "section_index": 1,
     "content": 1,
 }
-
-
-@dataclass(frozen=True)
-class Section:
-    """Immutable domain for a book section"""
-
-    id: str
-    book_title: str
-    chapter: str
-    title: str
-    section_index: int
-    content: str
 
 
 class SectionExtractor:

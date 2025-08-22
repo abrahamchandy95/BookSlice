@@ -1,5 +1,5 @@
 """MongoDB extraction utilities"""
 
-from .extract import Section, SectionExtractor
+from .extract import SectionExtractor
 
-__all__ = ["SectionExtractor", "Section"]
+__all__ = ["SectionExtractor"]
