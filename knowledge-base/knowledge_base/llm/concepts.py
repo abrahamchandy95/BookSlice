@@ -2,25 +2,31 @@
 Concept extraction over a Section object.
 """
 
-import argparse
-import json
 import os
-import pickle
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set
 
-from pymongo import MongoClient
 from requests import RequestException
 
-from knowledge_base.data_utils import Section
+from knowledge_base.domain import (
+    ConceptCounts,
+    ConceptData,
+    Key,
+    Section,
+    SectionConcepts,
+    SectionMap,
+    concepts_path,
+    create_key,
+    load_sections_map,
+    save_concepts,
+    sections_path,
+)
 from knowledge_base.llm.client import ModelParams, OllamaClient
 from knowledge_base.llm.utils import (
     dedup,
-    extract_message_content,
-    parse_json,
-    slugify,
+    llm_jsonify,
+    to_str_list,
 )
-from knowledge_base.mongo_extraction import SectionExtractor
 
 SYSTEM_PROMPT = (
     "You will receive the raw text of ONE book subsection.\n"
@@ -35,46 +41,16 @@ SYSTEM_PROMPT = (
 )
 
 
-def create_key(s: Section) -> Tuple[str, str, int]:
-    "Creates a unique key for each section"
-    return (s.book_title, s.chapter, int(s.section_index))
-
-
-def _normalize_output(out: Any) -> Dict[str, list[Any]]:
-    def _as_list(x: Any) -> list[Any]:
-        if x is None:
-            return []
-        if isinstance(x, list):
-            return x
-        if isinstance(x, (tuple, set)):
-            return list(x)
-        return [x]
-
-    def _from_json(text: str) -> Dict[str, List[Any]]:
-        try:
-            data = parse_json(text)
-        except (json.JSONDecodeError, ValueError, TypeError):
-            return {"concepts": []}
-
-        if not isinstance(data, Mapping):
-            return {"concepts": []}
-
-        return {"concepts": _as_list(data.get("concepts"))}
-
-    match out:
-        case {"concepts": concepts}:
-            return {"concepts": _as_list(concepts)}
-        case dict() as d if content := extract_message_content(d):
-            return _from_json(content)
-        case str(content):
-            return _from_json(content)
-        case _:
-            return {"concepts": []}
+def _normalize_output(response: Any) -> Dict[str, list[Any]]:
+    """Returns {'concepts': [...]} from any kind of LLM output"""
+    obj = llm_jsonify(response)
+    concepts = dedup(to_str_list(obj.get("concepts")))
+    return {"concepts": concepts}
 
 
 def _track_concepts(
     concepts: List[str],
-    concept_counts: Dict[str, int],
+    concept_counts: ConceptCounts,
     unique_concepts: Set[str],
 ) -> None:
     for c in concepts:
@@ -87,17 +63,13 @@ def _track_concepts(
             unique_concepts.add(k)
 
 
-def _ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
-
-
 def _eligible(text: str, min_chars: int) -> bool:
     return len(text or "") >= int(min_chars)
 
 
 def find_section_concepts(
     s: Section, llm_client: OllamaClient, mp: ModelParams
-) -> Tuple[Tuple[str, str, int], List[str]]:
+) -> SectionConcepts:
     """Finds concepts discussed in a single section"""
     response = _normalize_output(
         llm_client.generate(SYSTEM_PROMPT, s.content or "", params=mp)
@@ -111,7 +83,7 @@ def extract_concepts(
     sections: Iterable[Section],
     llm_client: OllamaClient,
     mp: Optional[ModelParams] = None,
-) -> Dict[str, Any]:
+) -> ConceptData:
     """
     Run concept extraction directly over Section objects.
 
@@ -130,7 +102,7 @@ def extract_concepts(
         mp = ModelParams(
             temperature=0.0, num_tokens=400, allow_thinking=False
         )
-    concepts_by_key: Dict[Tuple[str, str, int], List[str]] = {}
+    concepts_by_key: Dict[Key, List[str]] = {}
     unique_concepts: Set[str] = set()
     concept_counts: Dict[str, int] = defaultdict(int)
     eligible = 0
@@ -157,52 +129,47 @@ def extract_concepts(
             errors += 1
             concepts_by_key[key] = []
             print(f"[{key}] extraction error: {e}")
-    return {
-        "concepts_by_key": concepts_by_key,
-        "unique_concepts": unique_concepts,
-        "concept_counts": dict(concept_counts),
-        "sections_parsed": eligible,
-        "errors": errors,
-    }
 
-
-def save_concepts_to_pickle(result: Dict[str, Any], out_path: str) -> str:
-    """Writes the result to a pickle file for later use"""
-    _ensure_dir(os.path.dirname(out_path) or ".")
-    with open(out_path, "wb") as f:
-        pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return out_path
+    return ConceptData(
+        concepts_by_key=concepts_by_key,
+        unique_concepts=unique_concepts,
+        concept_counts=dict(concept_counts),
+        sections_parsed=eligible,
+        errors=errors,
+    )
 
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Book Concepts.")
-    parser.add_argument("book_title", help="Book Title stored in MongoDB")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Book Concepts from Section object."
+    )
+    parser.add_argument("book_title", help="Book Title")
     args = parser.parse_args()
+    sections_pkl = sections_path(args.book_title)
+    concepts_pkl = concepts_path(args.book_title)
 
-    slug = slugify(args.book_title)
-    OUTPATH = f"{slug}_concepts.pkl"
-
-    mongo_uri = os.environ.get("MONGO_URI", "mongodb://127.0.0.1:27017")
-    results_dir = os.environ.get("RESULTS_DIR", "results")
+    if not os.path.exists(sections_pkl):
+        raise SystemExit(
+            f"[error] Sections pickle not found: {sections_path}\n"
+        )
 
     llm = OllamaClient()
     params = ModelParams(
         temperature=0.0, num_tokens=400, allow_thinking=False
     )
 
-    mongo_client = MongoClient(mongo_uri)
-    extractor = SectionExtractor(mongo_client)
-    sections_by_id = extractor.get_sections_for_book(args.book_title)
-    sections_iter = sections_by_id.values()
-    print(f"Fetched {len(sections_by_id)} sections for: {args.book_title}")
+    section_map: SectionMap = load_sections_map(sections_pkl)
+    print(f"Fetched {len(section_map)} sections for: {args.book_title}")
 
-    concepts_gen = extract_concepts(sections_iter, llm, mp=params)
-    outfile = os.path.join(results_dir, OUTPATH)
-    save_concepts_to_pickle(concepts_gen, outfile)
+    concepts_gen = extract_concepts(section_map.values(), llm, mp=params)
+    os.makedirs(os.path.dirname(concepts_pkl), exist_ok=True)
+    save_concepts(concepts_gen, concepts_pkl)
 
     print("\n--- Summary ---")
-    print(f"Sections parsed: {concepts_gen['sections_parsed']}")
-    print(f"Errors:          {concepts_gen['errors']}")
-    print(f"Unique concepts: {len(concepts_gen['unique_concepts'])}")
-    print(f"Pickle saved to: {outfile}")
+    print(f"Sections parsed: {concepts_gen.sections_parsed}")
+    print(f"Errors:          {concepts_gen.errors}")
+    print(f"Unique concepts: {len(concepts_gen.unique_concepts)}")
+    print(f"Pickle saved to: {concepts_pkl}")

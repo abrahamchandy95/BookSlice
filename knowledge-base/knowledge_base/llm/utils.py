@@ -1,7 +1,6 @@
 """Lightweight helpers shared accross modules"""
 
 import json
-import re
 from typing import Any, Dict, Iterable, List
 
 
@@ -44,8 +43,31 @@ def dedup(items: Iterable[str]) -> List[str]:
     return out
 
 
-def slugify(s: str) -> str:
-    """Very small slug for filenames."""
-    s = s.strip().lower()
-    s = re.sub(r"[^a-z0-9]+", "-", s)
-    return re.sub(r"-{2,}", "-", s).strip("-") or "book"
+def to_str_list(x: Any) -> List[str]:
+    """Coerse into a clean list of strings"""
+    if x is None:
+        return []
+    if isinstance(x, list):
+        src = x
+    elif isinstance(x, (tuple, set)):
+        src = list(x)
+    else:
+        src = [x]
+    out: List[str] = []
+    for v in src:
+        s = str(v).strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def llm_jsonify(response: Any) -> Dict[str, Any]:
+    """Unifies llm outputs into a parsed json"""
+    if isinstance(response, dict):
+        if any(k in response for k in ("concepts", "prerequisites", "noisy")):
+            return response
+        content = extract_message_content(response)
+        return parse_json(content) if content else {}
+    if isinstance(response, str):
+        return parse_json(response)
+    return {}
