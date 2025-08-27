@@ -4,15 +4,25 @@ from .concepts import ConceptData, ConceptIndex, build_index
 from .corpus import ConceptCorpus
 from .section import Section
 from .types import (
+    Adjacency,
+    ConceptColl,
     ConceptCounts,
+    ConceptIdMap,
     ConceptOccurrences,
     ConceptsByKey,
     Edge,
+    EdgeList,
+    IdConceptMap,
+    IntEdge,
+    IntEdgeList,
     Key,
+    NodeId,
+    PrereqMap,
     PrereqRecord,
     PrereqResult,
     SectionConcepts,
     SectionMap,
+    VertexSet,
     create_key,
 )
 from .utils import (
@@ -53,4 +63,14 @@ __all__ = [
     "save_prereqs",
     "prereqs_path",
     "sections_path",
+    "NodeId",
+    "IntEdge",
+    "IntEdgeList",
+    "Adjacency",
+    "VertexSet",
+    "ConceptIdMap",
+    "IdConceptMap",
+    "ConceptColl",
+    "PrereqMap",
+    "EdgeList",
 ]

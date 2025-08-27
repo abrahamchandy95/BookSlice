@@ -1,6 +1,6 @@
 """Shared type aliases"""
 
-from typing import List, Mapping, Tuple, TypedDict
+from typing import Collection, Dict, List, Mapping, Set, Tuple, TypedDict
 
 from .section import Section
 
@@ -12,7 +12,20 @@ ConceptsByKey = Mapping[Key, List[Concept]]
 ConceptOccurrences = Mapping[Concept, List[Key]]
 SectionConcepts = Tuple[Key, List[str]]
 SectionMap = Mapping[Key, Section]
+
+# graph types
 Edge = Tuple[Concept, Concept]
+ConceptColl = Collection[Concept]
+PrereqMap = Mapping[Concept, ConceptColl]
+EdgeList = List[Edge]
+NodeId = int
+IntEdge = Tuple[NodeId, NodeId]
+IntEdgeList = List[IntEdge]
+Adjacency = Dict[NodeId, List[NodeId]]
+VertexSet = Set[NodeId]
+ConceptIdMap = Dict[Concept, NodeId]
+IdConceptMap = Dict[NodeId, Concept]
+Degree = Dict[NodeId, int]
 
 
 def create_key(s: Section) -> Key:
@@ -43,3 +56,17 @@ class PrereqResult(TypedDict):
     edge: List[Edge]
     error: int
     meta: PrereqMeta
+
+
+class GraphStats(TypedDict):
+    """Gives meta data about the graph"""
+
+    nodes: int
+    edges: int
+    foundations_count: int
+    targets_count: int
+    max_out_degree: int
+    max_in_degree: int
+    longest_prereq_chain: int
+    top_by_out_degree: List[Tuple[str, int]]
+    top_by_in_degree: List[Tuple[str, int]]
