@@ -2,23 +2,30 @@
 
 import os
 import pickle
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any
 
 from requests import exceptions as excep
 
 from knowledge_base.domain import (
     ConceptCorpus,
     ConceptData,
-    ConceptOccurrences,
-    Edge,
-    PrereqRecord,
-    PrereqResult,
-    SectionMap,
     concepts_path,
     load_concepts,
     load_sections_map,
     prereqs_path,
+    save_prereqs,
     sections_path,
+)
+from knowledge_base.domain.types import (
+    BookTitle,
+    Chapter,
+    Concept,
+    ConceptOccurrences,
+    Key,
+    PrereqPerConcept,
+    PrereqRecord,
+    PrereqResult,
+    SectionMap,
 )
 from knowledge_base.llm.client import ModelParams, OllamaClient
 from knowledge_base.llm.utils import (
@@ -40,11 +47,13 @@ SYSTEM_PROMPT_PREREQUISITES = (
 )
 
 
-def _empty_concept_prereq(concept: str) -> PrereqRecord:
+def _empty_concept_prereq(concept: Concept) -> PrereqRecord:
     return {"concept": concept, "noisy": False, "prerequisites": []}
 
 
-def _build_basic_noise_filter_prompt(book_title: str, chapter: str) -> str:
+def _build_basic_noise_filter_prompt(
+    book_title: BookTitle, chapter: Chapter
+) -> str:
     return (
         f"You are an expert curriculum mapper for '{book_title}', "
         f"chapter '{chapter}'. You will receive ONE candidate concept.\n"
@@ -59,7 +68,9 @@ def _build_basic_noise_filter_prompt(book_title: str, chapter: str) -> str:
     )
 
 
-def _build_context_adept_noise_filter(book_title: str, chapter: str) -> str:
+def _build_context_adept_noise_filter(
+    book_title: BookTitle, chapter: Chapter
+) -> str:
     return (
         f"You are a curriculum-mapping assistant for '{book_title}', "
         f"chapter '{chapter}'. You will receive ONE candidate concept "
@@ -74,7 +85,7 @@ def _build_context_adept_noise_filter(book_title: str, chapter: str) -> str:
     )
 
 
-def _normalize_response(response: Any, concept: str) -> PrereqRecord:
+def _normalize_response(response: Any, concept: Concept) -> PrereqRecord:
     o = llm_jsonify(response)
     noisy = bool(o.get("noisy", False))
     prereqs = dedup(to_str_list(o.get("prerequisites")))
@@ -83,7 +94,7 @@ def _normalize_response(response: Any, concept: str) -> PrereqRecord:
 
 
 def _select_system_prompt(
-    concept: str,
+    concept: Concept,
     count: int,
     concept_corpus: ConceptCorpus,
 ) -> str:
@@ -95,7 +106,7 @@ def _select_system_prompt(
 
 
 def _assess_prereqs_initial(
-    concept: str,
+    concept: Concept,
     concept_corpus: ConceptCorpus,
     local_llm: OllamaClient,
     mp: ModelParams,
@@ -111,17 +122,18 @@ def _assess_prereqs_initial(
 
 
 def _assess_prereqs_with_context(
-    concept: str,
+    concept: Concept,
     concept_corpus: ConceptCorpus,
     local_llm: OllamaClient,
     mp: ModelParams,
-) -> Optional[PrereqRecord]:
+) -> PrereqRecord | None:
     occ: ConceptOccurrences = concept_corpus.get_concept_occurances(concept)
     if not occ:
         return None
-    rep_key = occ[0]
-    book_title, chapter = rep_key[0], rep_key[1]
-    context = concept_corpus.get_content(key=rep_key, max_chars=2000)
+    rep_key: Key = occ[0]
+    book_title: BookTitle = rep_key[0]
+    chapter: Chapter = rep_key[1]
+    context: str = concept_corpus.get_content(key=rep_key, max_chars=2000)
     if not context:
         return None
     prompt = _build_context_adept_noise_filter(book_title, chapter)
@@ -130,33 +142,19 @@ def _assess_prereqs_with_context(
     return _normalize_response(response, concept)
 
 
-def build_concept_prereq_edges_and_filter(
-    response_per_concept: Mapping[str, PrereqRecord],
-) -> Tuple[List[Edge], List[str]]:
-    """
-    Builds a relationship [prereq -> concept] for every prerequisite
-    """
-    edges: List[Edge] = []
-    final_noise: List[str] = []
-    for c, resp in response_per_concept.items():
-        if resp.get("noisy"):
-            final_noise.append(c)
-        for p in resp.get("prerequisites", []) or []:
-            edges.append((p, c))
-    return edges, final_noise
-
-
 def _collect_prereqs_first_pass(
     concept_corpus: ConceptCorpus,
     local_llm: OllamaClient,
     model_params: ModelParams,
-) -> Tuple[Dict[str, PrereqRecord], List[str], int]:
+) -> tuple[PrereqPerConcept, list[Chapter], int]:
 
-    prereqs_by_concept: Dict[str, PrereqRecord] = {}
-    noisy_concepts: List[str] = []
+    prereqs_by_concept: PrereqPerConcept = {}
+    noisy_concepts: list[Chapter] = []
     err_count = 0
 
-    all_concepts = list(concept_corpus.index.keys_by_canon.keys())
+    all_concepts: list[Concept] = list(
+        concept_corpus.index.keys_by_canon.keys()
+    )
     for idx, concept in enumerate(all_concepts):
         try:
             response = _assess_prereqs_initial(
@@ -179,14 +177,14 @@ def _collect_prereqs_first_pass(
 
 
 def _run_context_aware_noise_rechecks(
-    noisy_candidates: List[str],
+    noisy_candidates: list[Concept],
     concept_corpus: ConceptCorpus,
     local_llm: OllamaClient,
     model_params: ModelParams,
-) -> Tuple[Dict[str, PrereqRecord], List[str], int]:
+) -> tuple[PrereqPerConcept, list[Concept], int]:
 
-    updates: Dict[str, PrereqRecord] = {}
-    corrected: List[str] = []
+    updates: PrereqPerConcept = {}
+    corrected: list[Concept] = []
     errors = 0
 
     for jdx, concept in enumerate(noisy_candidates):
@@ -217,7 +215,7 @@ def _run_context_aware_noise_rechecks(
 def get_prereqs_from_concepts(
     concept_corpus: ConceptCorpus,
     local_llm: OllamaClient,
-    model_params: Optional[ModelParams] = None,
+    model_params: ModelParams | None = None,
 ) -> PrereqResult:
     """Generates prerequisites for each concept using a two-pass approach"""
 
@@ -238,14 +236,13 @@ def get_prereqs_from_concepts(
         model_params=mp,
     )
     prereqs_by_concept.update(overrides)
-    edges, final_noise = build_concept_prereq_edges_and_filter(
-        prereqs_by_concept
-    )
+    final_noise: list[Concept] = [
+        c for c, r in prereqs_by_concept.items() if r.get("noisy")
+    ]
 
     return {
         "per_concept": prereqs_by_concept,
         "noisy_concepts": final_noise,
-        "edges": edges,
         "errors": err1 + err2,
         "meta": {
             "counts": dict(concept_corpus.concepts.concept_counts),
@@ -256,8 +253,6 @@ def get_prereqs_from_concepts(
 
 if __name__ == "__main__":
     import argparse
-
-    from knowledge_base.domain import save_prereqs
 
     parser = argparse.ArgumentParser(
         description="Generate prerequisites per concept"
@@ -278,7 +273,7 @@ if __name__ == "__main__":
             "Run the concept extractor first."
         )
 
-    concepts_data: ConceptData = load_concepts(concepts_pkl)
+    concept_data: ConceptData = load_concepts(concepts_pkl)
 
     sections_by_key: SectionMap = {}
     if os.path.exists(sections_pkl):
@@ -302,7 +297,7 @@ if __name__ == "__main__":
 
     # Build corpus and run
     corpus = ConceptCorpus.from_concepts(
-        concepts=concepts_data, sections_by_key=sections_by_key
+        concepts=concept_data, sections_by_key=sections_by_key
     )
     llm = OllamaClient()
     params = ModelParams(
@@ -320,7 +315,6 @@ if __name__ == "__main__":
     print("\n--- Prerequisite Generation Summary ---")
     print(f"Book:               {args.book_title}")
     print(f"Concepts processed: {len(result.get('per_concept', {}))}")
-    print(f"Edges:              {len(result.get('edges', []))}")
     print(f"Noisy concepts:     {len(result.get('noisy_concepts', []))}")
     print(f"Errors:             {result.get('errors', 0)}")
     print(f"Saved to:           {out_pkl}")

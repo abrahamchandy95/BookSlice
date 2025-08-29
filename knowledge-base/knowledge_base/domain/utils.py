@@ -7,6 +7,8 @@ from typing import Any
 
 from knowledge_base.domain import ConceptData, Section
 from knowledge_base.domain.types import (
+    Edge,
+    EdgeList,
     PrereqResult,
     SectionMap,
 )
@@ -29,6 +31,11 @@ def sections_path(book_title: str) -> str:
     return os.path.join(
         results_dir(), "sections", f"{slugify(book_title)}.pkl"
     )
+
+
+def edges_path(book_title: str) -> str:
+    "Path of saved edge list derived from prerequisites"
+    return os.path.join(results_dir(), "edges", f"{slugify(book_title)}.pkl")
 
 
 def concepts_path(book_title: str) -> str:
@@ -124,13 +131,37 @@ def load_prereqs(path: str) -> PrereqResult:
     with open(path, "rb") as f:
         o = pickle.load(f)
     # We expect a dict matching PrereqResult keys
-    if isinstance(o, dict) and all(
-        k in o for k in ("per_concept", "edges", "meta")
-    ):
-        return o
-    raise TypeError(f"Unsupported prereqs pickle format at: {path}")
+    if not isinstance(o, dict):
+        raise TypeError(f"Unsupported prereqs pickle format at: {path}")
+    prereqs_per_concept = o.get("prereqs_per_concept")
+    noisy_concepts = o.get("noisy_concepts", [])
+    errors = o.get("errors", 0)
+    meta = o.get("meta", {})
+    return {
+        "prereqs_per_concept": prereqs_per_concept,
+        "noisy_concepts": noisy_concepts,
+        "errors": int(errors),
+        "meta": meta,
+    }
 
 
 def save_prereqs(result: PrereqResult, path: str) -> str:
     "saves generated prerequisite object into a pickle"
-    return save_pickle(result, path)
+    cleaned = {
+        "prereqs_per_concept": result.get("prereqs_per_concept", {}),
+        "noisy_concepts": result.get("noisy_concepts", []),
+        "errors": int(result.get("errors", 0)),
+        "meta": result.get("meta", {}),
+    }
+    return save_pickle(cleaned, path)
+
+
+def load_edges(path: str) -> EdgeList:
+    "loads the list of available edges"
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def save_edges(edges: EdgeList, path: str) -> str:
+    "saves edges to a pickle"
+    return save_pickle(edges, path)

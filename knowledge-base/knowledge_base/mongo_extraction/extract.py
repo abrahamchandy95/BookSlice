@@ -10,7 +10,12 @@ from typing import Any, Dict, List
 from pymongo import ASCENDING, MongoClient
 from pymongo.collection import Collection
 
-from knowledge_base.domain import Key, Section, create_key, slugify
+from knowledge_base.domain import Section, slugify
+from knowledge_base.domain.types import (
+    BookTitle,
+    SectionMap,
+    create_key,
+)
 
 MIN_CHARS = 100
 DB_NAME = "bookslice"
@@ -33,9 +38,9 @@ class SectionExtractor:
         self.db_name = DB_NAME
         self.collection = COLLECTION
 
-    def get_sections_for_book(self, book_title: str) -> Dict[Key, Section]:
+    def get_sections_for_book(self, book_title: BookTitle) -> SectionMap:
         """Retuns all the books sections for a book stored in MongoDB"""
-        out: Dict[Key, Section] = {}
+        out: SectionMap = {}
         pipeline = self._pipeline(book_title, mode="docs")
 
         for doc in self._coll().aggregate(pipeline, allowDiskUse=True):
@@ -43,7 +48,7 @@ class SectionExtractor:
             out[create_key(s)] = s
         return out
 
-    def count_sections(self, book_title: str) -> int:
+    def count_sections(self, book_title: BookTitle) -> int:
         """Returns number of sections in a book"""
         pipeline = self._pipeline(book_title, mode="count")
         res = list(self._coll().aggregate(pipeline))
@@ -52,7 +57,7 @@ class SectionExtractor:
     def _coll(self) -> Collection:
         return self.client[self.db_name][self.collection]
 
-    def _pipeline(self, book_title: str, mode: str) -> List[Dict]:
+    def _pipeline(self, book_title: BookTitle, mode: str) -> List[Dict]:
         base = [
             {"$match": {"book_title": book_title}},
             {
@@ -88,7 +93,7 @@ class SectionExtractor:
         )
 
 
-def save_sections(sections_by_id: Dict[Key, Section], out_path: str) -> str:
+def save_sections(sections_by_id: SectionMap, out_path: str) -> str:
     """Save each section to a pickle"""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "wb") as f:

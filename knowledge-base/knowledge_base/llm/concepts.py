@@ -4,22 +4,25 @@ Concept extraction over a Section object.
 
 import os
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Iterable
 
 from requests import RequestException
 
 from knowledge_base.domain import (
-    ConceptCounts,
     ConceptData,
-    Key,
     Section,
-    SectionConcepts,
-    SectionMap,
     concepts_path,
-    create_key,
     load_sections_map,
     save_concepts,
     sections_path,
+)
+from knowledge_base.domain.types import (
+    Concept,
+    ConceptCounts,
+    ConceptsByKey,
+    SectionConcepts,
+    SectionMap,
+    create_key,
 )
 from knowledge_base.llm.client import ModelParams, OllamaClient
 from knowledge_base.llm.utils import (
@@ -28,7 +31,7 @@ from knowledge_base.llm.utils import (
     to_str_list,
 )
 
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT: str = (
     "You will receive the raw text of ONE book subsection.\n"
     "Return ONLY a single JSON object with this shape:\n"
     '  {"concepts": ["...", "..."]}\n'
@@ -41,7 +44,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def _normalize_output(response: Any) -> Dict[str, list[Any]]:
+def _normalize_output(response: Any) -> dict[str, list[Concept]]:
     """Returns {'concepts': [...]} from any kind of LLM output"""
     obj = llm_jsonify(response)
     concepts = dedup(to_str_list(obj.get("concepts")))
@@ -49,9 +52,9 @@ def _normalize_output(response: Any) -> Dict[str, list[Any]]:
 
 
 def _track_concepts(
-    concepts: List[str],
+    concepts: list[Concept],
     concept_counts: ConceptCounts,
-    unique_concepts: Set[str],
+    unique_concepts: set[Concept],
 ) -> None:
     for c in concepts:
         k = (c or "").strip()
@@ -82,7 +85,7 @@ def find_section_concepts(
 def extract_concepts(
     sections: Iterable[Section],
     llm_client: OllamaClient,
-    mp: Optional[ModelParams] = None,
+    mp: ModelParams | None = None,
 ) -> ConceptData:
     """
     Run concept extraction directly over Section objects.
@@ -102,9 +105,9 @@ def extract_concepts(
         mp = ModelParams(
             temperature=0.0, num_tokens=400, allow_thinking=False
         )
-    concepts_by_key: Dict[Key, List[str]] = {}
-    unique_concepts: Set[str] = set()
-    concept_counts: Dict[str, int] = defaultdict(int)
+    concepts_by_key: ConceptsByKey = {}
+    unique_concepts: set[Concept] = set()
+    concept_counts: ConceptCounts = defaultdict(int)
     eligible = 0
     errors = 0
 

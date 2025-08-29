@@ -1,10 +1,10 @@
 """Lightweight helpers shared accross modules"""
 
 import json
-from typing import Any, Dict, Iterable, List
+from typing import Any, Iterable
 
 
-def parse_json(s: str) -> Dict[str, Any]:
+def parse_json(s: str) -> dict[str, Any]:
     """fix json if malformed"""
     try:
         return json.loads(s)
@@ -18,7 +18,7 @@ def parse_json(s: str) -> Dict[str, Any]:
         return {}
 
 
-def extract_message_content(raw: Dict[str, Any]) -> str:
+def extract_message_content(raw: dict[str, Any]) -> str:
     """Get text from /api/chat or /api/generate."""
     msg = raw.get("message")
     if isinstance(msg, dict) and "content" in msg:
@@ -29,7 +29,7 @@ def extract_message_content(raw: Dict[str, Any]) -> str:
     return ""
 
 
-def dedup(items: Iterable[str]) -> List[str]:
+def dedup(items: Iterable[str]) -> list[str]:
     """Dedup and preserve first seen"""
     out, seen = [], set()
     for s in items or []:
@@ -43,7 +43,7 @@ def dedup(items: Iterable[str]) -> List[str]:
     return out
 
 
-def to_str_list(x: Any) -> List[str]:
+def to_str_list(x: Any) -> list[str]:
     """Coerse into a clean list of strings"""
     if x is None:
         return []
@@ -61,7 +61,7 @@ def to_str_list(x: Any) -> List[str]:
     return out
 
 
-def llm_jsonify(response: Any) -> Dict[str, Any]:
+def llm_jsonify(response: Any) -> dict[str, Any]:
     """Unifies llm outputs into a parsed json"""
     if isinstance(response, dict):
         if any(k in response for k in ("concepts", "prerequisites", "noisy")):
