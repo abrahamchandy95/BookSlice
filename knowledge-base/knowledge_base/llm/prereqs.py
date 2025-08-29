@@ -223,7 +223,7 @@ def get_prereqs_from_concepts(
         temperature=0.0, num_tokens=400, allow_thinking=False
     )
     # pass 1
-    prereqs_by_concept, noisy_candidates, err1 = _collect_prereqs_first_pass(
+    prereqs_per_concept, noisy_candidates, err1 = _collect_prereqs_first_pass(
         concept_corpus=concept_corpus,
         local_llm=local_llm,
         model_params=mp,
@@ -235,13 +235,13 @@ def get_prereqs_from_concepts(
         local_llm=local_llm,
         model_params=mp,
     )
-    prereqs_by_concept.update(overrides)
+    prereqs_per_concept.update(overrides)
     final_noise: list[Concept] = [
-        c for c, r in prereqs_by_concept.items() if r.get("noisy")
+        c for c, r in prereqs_per_concept.items() if r.get("noisy")
     ]
 
     return {
-        "per_concept": prereqs_by_concept,
+        "prereqs_per_concept": prereqs_per_concept,
         "noisy_concepts": final_noise,
         "errors": err1 + err2,
         "meta": {
@@ -314,7 +314,7 @@ if __name__ == "__main__":
     # Summary
     print("\n--- Prerequisite Generation Summary ---")
     print(f"Book:               {args.book_title}")
-    print(f"Concepts processed: {len(result.get('per_concept', {}))}")
+    print(f"Concepts processed: {len(result.get('prereqs_per_concept', {}))}")
     print(f"Noisy concepts:     {len(result.get('noisy_concepts', []))}")
     print(f"Errors:             {result.get('errors', 0)}")
     print(f"Saved to:           {out_pkl}")

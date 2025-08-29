@@ -7,7 +7,6 @@ from typing import Any
 
 from knowledge_base.domain import ConceptData, Section
 from knowledge_base.domain.types import (
-    Edge,
     EdgeList,
     PrereqResult,
     SectionMap,

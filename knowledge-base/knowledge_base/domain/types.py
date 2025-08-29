@@ -42,7 +42,7 @@ class PrereqMeta(TypedDict):
 class PrereqResult(TypedDict):
     """Final prerequisites output saved to disk."""
 
-    prereq_by_concept: Mapping[Concept, PrereqRecord]
+    prereqs_by_concept: Mapping[Concept, PrereqRecord]
     noisy_concepts: list[Concept]
     error: int
     meta: PrereqMeta
